@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>LocalDrop - Secure Transfer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root { 
+      --primary: #007aff; --bg: #f2f2f7; --card-bg: #ffffff; --text: #000000; 
+      --border: #d1d1d6; --status: #8e8e93; --toggle-bg: #e3e3e3;
+      --slider-bg: #ffffff; --icon-bg: #f2f2f7; --icon-fill: #8e8e93;
+    }
+
+    [data-theme="dark"] {
+      --bg: #000000; --card-bg: #1c1c1e; --text: #ffffff; --border: #38383a; 
+      --status: #8e8e93; --toggle-bg: #2c2c2e; --slider-bg: #636366;
+      --icon-bg: #2c2c2e; --icon-active: #ffffff;
+    }
+
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif; 
+      background: var(--bg); color: var(--text); text-align: center; 
+      margin: 0; padding: 20px; transition: background 0.4s ease;
+      display: flex; flex-direction: column; align-items: center; min-height: 100vh;
+    }
+
+    .container { width: 100%; max-width: 400px; flex-grow: 1; }
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; width: 100%; }
+
+    .triple-toggle {
+      display: flex; background: var(--toggle-bg); padding: 2px; border-radius: 100px; 
+      position: relative; width: 120px; height: 32px; user-select: none; align-items: center;
+    }
+    .toggle-option { flex: 1; z-index: 2; display: flex; align-items: center; justify-content: center; cursor: pointer; height: 28px; }
+    .toggle-option svg { width: 16px; height: 16px; fill: var(--icon-fill); transition: fill 0.2s; }
+    .toggle-slider {
+      position: absolute; width: 36px; height: 28px; background: var(--slider-bg);
+      border-radius: 100px; transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      z-index: 1; left: 2px; top: 2px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    [data-mode="light"] .toggle-slider { transform: translateX(0); }
+    [data-mode="system"] .toggle-slider { transform: translateX(40px); }
+    [data-mode="dark"] .toggle-slider { transform: translateX(80px); }
+
+    .card { background: var(--card-bg); padding: 25px; border-radius: 24px; border: 1px solid var(--border); margin-bottom: 15px; text-align: left; box-shadow: 0 10px 25px rgba(0,0,0,0.04); }
+    .info-item { display: flex; align-items: flex-start; gap: 15px; }
+    .info-icon { background: var(--icon-bg); padding: 10px; border-radius: 12px; min-width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; font-size: 20px; }
+    .info-text h4 { margin: 0 0 4px 0; font-size: 15px; font-weight: 700; }
+    .info-text p { margin: 0; font-size: 13px; color: var(--status); line-height: 1.4; }
+
+    .btn { background: var(--primary); color: white; border: none; padding: 16px; border-radius: 14px; cursor: pointer; font-weight: 600; width: 100%; margin-top: 15px; font-size: 1rem; }
+    #qrcode { background: white; padding: 12px; border-radius: 16px; display: block; margin: 15px auto; width: fit-content; border: 1px solid #eee; }
+    .device-icon { font-size: 64px; text-align: center; display: block; margin-bottom: 10px; }
+
+    .preview-list { margin-top: 15px; border-top: 1px solid var(--border); padding-top: 10px; max-height: 250px; overflow-y: auto; }
+    .preview-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .thumb-box { width: 44px; height: 44px; border-radius: 10px; background: var(--icon-bg); overflow: hidden; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border); cursor: zoom-in; position: relative; }
+    .thumb-box img { width: 100%; height: 100%; object-fit: cover; }
+    .video-indicator { position: absolute; font-size: 8px; bottom: 2px; right: 2px; background: rgba(0,0,0,0.7); color: white; padding: 1px 3px; border-radius: 3px; font-weight: bold; }
+    .mini-btn { border: none; padding: 6px 14px; border-radius: 10px; font-size: 12px; cursor: pointer; font-weight: 700; background: var(--toggle-bg); color: var(--text); }
+    .mini-btn.active { background: var(--primary); color: white; }
+
+    #preview-modal { 
+      position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; 
+      background: rgba(0,0,0,0.95); z-index: 9999; display: none; 
+      flex-direction: column; align-items: center; justify-content: center; 
+      backdrop-filter: blur(15px);
+    }
+    #modal-img { 
+      display: block;
+      max-width: 90vw; 
+      max-height: 80vh; 
+      width: auto; 
+      height: auto; 
+      border-radius: 12px; 
+      object-fit: contain; 
+      box-shadow: 0 20px 60px rgba(0,0,0,0.8);
+    }
+    .disclaimer { 
+      color: #ffcc00; font-size: 13px; margin-top: 25px; font-weight: 600; 
+      background: rgba(255, 204, 0, 0.15); padding: 12px 25px; border-radius: 30px; 
+      border: 1px solid rgba(255, 204, 0, 0.4); text-align: center; 
+      max-width: 80%; line-height: 1.4;
+    }
+
+    #progress-container { width: 100%; background: var(--toggle-bg); height: 8px; border-radius: 10px; margin-top: 20px; overflow: hidden; display: none; }
+    #progress-bar { width: 0%; height: 100%; background: var(--primary); transition: width 0.2s ease; }
+    .status { color: var(--status); margin-top: 10px; font-size: 0.85rem; font-weight: 500; }
+    .hidden { display: none; }
+    footer { margin-top: 40px; padding-bottom: 20px; font-size: 12px; color: var(--status); font-weight: 500; }
+  </style>
+</head>
+<body>
+  <div id="preview-modal" onclick="this.style.display='none'">
+    <img id="modal-img" src="">
+    <div class="disclaimer">⚠️ Original quality is preserved in the download.</div>
+  </div>
+
+  <div class="container">
+    <div class="header">
+      <h2 style="margin:0; font-weight: 800; letter-spacing: -0.03em;">LocalDrop</h2>
+      <div class="triple-toggle" id="triple-toggle">
+        <div class="toggle-slider"></div>
+        <div class="toggle-option" onclick="applyTheme('light')"><svg viewBox="0 0 24 24"><path d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM2 13h2c.55 0 1-.45 1-1s-.45-1-1-1H2c-.55 0-1 .45-1 1s.45 1 1 1zm18 0h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1s.45 1 1 1zM11 2v2c0 .55.45 1 1 1s1-.45 1-1V2c0-.55-.45-1-1-1s-1 .45-1 1zm0 18v2c0 .55.45 1 1 1s1-.45 1-1v-2c0-.55-.45-1-1-1s-1 .45-1 1zM5.99 4.58c-.39-.39-1.03-.39-1.41 0s-.39 1.03 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0s.39-1.03 0-1.41L5.99 4.58z"/></svg></div>
+        <div class="toggle-option" onclick="applyTheme('system')"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8v16z"/></svg></div>
+        <div class="toggle-option" onclick="applyTheme('dark')"><svg viewBox="0 0 24 24"><path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-2.98 0-5.4-2.42-5.4-5.4 0-1.81.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z"/></svg></div>
+      </div>
+    </div>
+
+    <div id="setup-view" class="card" style="text-align: center;">
+      <div id="my-local-icon" class="device-icon">...</div>
+      <p style="font-weight: 600;">Connect another device</p>
+      <div id="qrcode"></div>
+      <button class="btn" onclick="copyLink()">Copy Share Link</button>
+    </div>
+
+    <div id="transfer-view" class="card hidden" style="text-align: center;">
+      <div id="remote-icon" class="device-icon">❓</div>
+      <h3 id="peer-name" style="margin-top:0;">Connected!</h3>
+      
+      <div id="preview-section" class="hidden">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+          <p style="text-align: left; font-size: 14px; font-weight: 700; margin: 0;">Accept Files:</p>
+          <button class="mini-btn" id="select-all-btn" onclick="selectAll()">Select All</button>
+        </div>
+        <div id="preview-list" class="preview-list"></div>
+        <button class="btn" onclick="submitSelection()">Done</button>
+      </div>
+
+      <div id="progress-container"><div id="progress-bar"></div></div>
+      <p id="transfer-status" class="status">Ready</p>
+      <button id="send-btn" class="btn" onclick="document.getElementById('fileInput').click()">Send Files</button>
+      <input type="file" id="fileInput" class="hidden" multiple>
+    </div>
+
+    <div class="card"><div class="info-item"><div class="info-icon">🔒</div><div class="info-text"><h4>P2P Encrypted</h4><p>Files travel directly between devices. No server ever sees your data.</p></div></div></div>
+    <div class="card"><div class="info-item"><div class="info-icon">🙈</div><div class="info-text"><h4>Total Privacy</h4><p>No account or registration required. Your transfers are anonymous.</p></div></div></div>
+    <div class="card"><div class="info-item"><div class="info-icon">⚡</div><div class="info-text"><h4>Direct Speed</h4><p>Uses your local network for the fastest possible transfer speeds.</p></div></div></div>
+  </div>
+  <footer>&copy; 2026 Splicate Network</footer>
+
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  
+  <script>
+    const myIcon = /Mobile|Android|iP(hone|od)/i.test(navigator.userAgent) ? "📱" : "💻";
+    document.getElementById('my-local-icon').innerText = myIcon;
+
+    function applyTheme(m) {
+      const t = document.getElementById('triple-toggle'); t.setAttribute('data-mode', m);
+      let e = m === 'system' ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : m;
+      document.documentElement.setAttribute('data-theme', e);
+      localStorage.setItem('ld-pref', m);
+    }
+    applyTheme(localStorage.getItem('ld-pref') || 'system');
+
+    const CHUNK_SIZE = 64000;
+    let connection, incomingBatch = [], selectedIndices = new Set(), receivedChunks = [], currentMeta = null, currentAckResolve = null;
+
+    const peer = new Peer("ld-" + Math.random().toString(36).substring(2, 8));
+    peer.on('open', id => {
+      new QRCode(document.getElementById("qrcode"), { text: window.location.href + "?join=" + id, width: 180, height: 180 });
+      const joinId = new URLSearchParams(window.location.search).get('join');
+      if (joinId) setupConnection(peer.connect(joinId));
+    });
+
+    peer.on('connection', c => setupConnection(c));
+
+    function setupConnection(c) {
+      connection = c;
+      c.on('open', () => {
+        document.getElementById('setup-view').classList.add('hidden');
+        document.getElementById('transfer-view').classList.remove('hidden');
+        c.send({ type: 'identity', icon: myIcon });
+      });
+
+      c.on('data', async (d) => {
+        if (d.type === 'identity') {
+           document.getElementById('remote-icon').innerText = d.icon;
+           document.getElementById('peer-name').innerText = d.icon === "📱" ? "Phone Connected" : "Desktop Connected";
+        } else if (d.type === 'batch-ask') {
+          incomingBatch = d.files; selectedIndices.clear(); renderPreviewList();
+          document.getElementById('preview-section').classList.remove('hidden');
+          document.getElementById('send-btn').classList.add('hidden');
+          document.getElementById('select-all-btn').innerText = "Select All";
+        } else if (d.type === 'batch-ok') {
+          sendFilesSequentially(d.indices.map(i => document.getElementById('fileInput').files[i]));
+        } else if (d.type === 'file-start') {
+          currentMeta = d; receivedChunks = new Array(d.totalChunks);
+          document.getElementById('progress-container').style.display = 'block';
+          document.getElementById('transfer-status').innerText = "Receiving " + d.name;
+        } else if (d.type === 'chunk') {
+          receivedChunks[d.index] = d.data;
+          let count = receivedChunks.filter(x => x).length;
+          document.getElementById('progress-bar').style.width = (count / currentMeta.totalChunks * 100) + "%";
+          if (count === currentMeta.totalChunks) {
+            const blob = new Blob(receivedChunks);
+            const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = currentMeta.name; a.click();
+            connection.send({ type: 'file-ack' });
+          }
+        } else if (d.type === 'file-ack') {
+          if (currentAckResolve) currentAckResolve(); 
+        }
+      });
+    }
+
+    async function sendFilesSequentially(files) {
+      for (let f of files) {
+        const totalChunks = Math.ceil(f.size / CHUNK_SIZE);
+        connection.send({ type: 'file-start', name: f.name, totalChunks });
+        for (let i = 0; i < totalChunks; i++) {
+          const start = i * CHUNK_SIZE;
+          const chunk = await f.slice(start, start + CHUNK_SIZE).arrayBuffer();
+          connection.send({ type: 'chunk', data: chunk, index: i });
+          if (i % 25 === 0) await new Promise(r => setTimeout(r, 12));
+        }
+        await new Promise(res => { currentAckResolve = res; });
+      }
+      document.getElementById('transfer-status').innerText = "Complete!";
+      document.getElementById('send-btn').classList.remove('hidden');
+      setTimeout(() => { 
+        document.getElementById('progress-container').style.display = 'none';
+        document.getElementById('transfer-status').innerText = "Ready"; 
+      }, 3000);
+    }
+
+    function renderPreviewList() {
+      const list = document.getElementById('preview-list'); list.innerHTML = '';
+      incomingBatch.forEach((f, i) => {
+        const item = document.createElement('div'); item.className = 'preview-item';
+        const isVideo = f.type && f.type.startsWith('video/');
+        item.innerHTML = `<div class="thumb-box" onclick="showPreview('${f.thumb}')">${f.thumb ? `<img src="${f.thumb}">` : '📄'}${isVideo ? '<span class="video-indicator">VID</span>' : ''}</div>
+          <div style="flex:1; padding-left:12px; font-size:13px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${f.name}</div>
+          <button class="mini-btn" id="btn-${i}" onclick="toggleSelect(${i})">Select</button>`;
+        list.appendChild(item);
+      });
+    }
+
+    function toggleSelect(i) {
+      selectedIndices.has(i) ? selectedIndices.delete(i) : selectedIndices.add(i);
+      document.getElementById('btn-'+i).classList.toggle('active');
+      updateSelectAllButton();
+    }
+
+    function selectAll() {
+      const btn = document.getElementById('select-all-btn');
+      if (selectedIndices.size === incomingBatch.length) {
+        selectedIndices.clear();
+        incomingBatch.forEach((_, i) => document.getElementById('btn-'+i).classList.remove('active'));
+        btn.innerText = "Select All";
+      } else {
+        incomingBatch.forEach((_, i) => {
+          selectedIndices.add(i);
+          document.getElementById('btn-'+i).classList.add('active');
+        });
+        btn.innerText = "Deselect All";
+      }
+    }
+
+    function updateSelectAllButton() {
+      const btn = document.getElementById('select-all-btn');
+      btn.innerText = (selectedIndices.size === incomingBatch.length) ? "Deselect All" : "Select All";
+    }
+
+    function submitSelection() {
+      if(!selectedIndices.size) return;
+      document.getElementById('preview-section').classList.add('hidden');
+      connection.send({ type: 'batch-ok', indices: Array.from(selectedIndices) });
+    }
+
+    function showPreview(s) { if(s && s !== 'null') { document.getElementById('modal-img').src=s; document.getElementById('preview-modal').style.display='flex'; } }
+
+    document.getElementById('fileInput').onchange = async (e) => {
+      document.getElementById('transfer-status').innerText = "Preparing...";
+      const meta = [];
+      for (let f of e.target.files) {
+        let thumb = null;
+        try {
+          if (f.type.startsWith('image/')) thumb = await genThumb(f);
+          if (f.type.startsWith('video/')) thumb = await genVideoThumb(f);
+        } catch(e) {}
+        meta.push({ name: f.name, type: f.type, thumb });
+      }
+      connection.send({ type: 'batch-ask', files: meta });
+      document.getElementById('transfer-status').innerText = "Waiting...";
+    };
+
+    async function genThumb(f) {
+      return new Promise(res => {
+        const r = new FileReader(); r.onload = e => {
+          const img = new Image(); img.onload = () => {
+            const c = document.createElement('canvas');
+            c.width=800; c.height=800;
+            const ctx = c.getContext('2d');
+            const scale = Math.min(800/img.width, 800/img.height);
+            const w = img.width * scale;
+            const h = img.height * scale;
+            c.width = w; c.height = h;
+            ctx.drawImage(img,0,0,w,h); res(c.toDataURL('image/jpeg', 0.8));
+          }; img.src = e.target.result;
+        }; r.readAsDataURL(f);
+      });
+    }
+
+    async function genVideoThumb(f) {
+      return new Promise(res => {
+        const v = document.createElement('video'); v.preload = 'metadata'; v.muted = true; v.playsInline = true;
+        v.src = URL.createObjectURL(f);
+        v.onloadeddata = () => { v.currentTime = 0.5; };
+        v.onseeked = () => {
+          const c = document.createElement('canvas');
+          c.width=800; c.height=800;
+          const ctx = c.getContext('2d');
+          const scale = Math.min(800/v.videoWidth, 800/v.videoHeight);
+          const w = v.videoWidth * scale;
+          const h = v.videoHeight * scale;
+          c.width = w; c.height = h;
+          ctx.drawImage(v,0,0,w,h); res(c.toDataURL('image/jpeg', 0.8));
+          URL.revokeObjectURL(v.src);
+        };
+        setTimeout(() => res(null), 4000);
+      });
+    }
+
+    function copyLink() { 
+      navigator.clipboard.writeText(window.location.href + "?join=" + peer.id); 
+      alert("Link copied! 📋"); 
+    }
+  </script>
+</body>
+</html>
